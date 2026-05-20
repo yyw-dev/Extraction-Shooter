@@ -1,0 +1,8 @@
+[22392:30504:0520/001331.129:WARNING:chrome_main_delegate.cc(745)] This is Chrome version 128.0.6613.138 (not a warning)
+[22392:30504:0520/001331.420:WARNING:account_consistency_mode_manager.cc(77)] Desktop Identity Consistency cannot be enabled as no OAuth client ID and client secret have been configured.
+[5396:20868:0520/001346.740:WARNING:frame_impl.cc(430)] virtual CefFrameImpl::SendProcessMessage sent to detached frame 5-7F99C3F64FD27C76EA495ED8478E92FD will be ignored
+[22392:30504:0520/010906.442:WARNING:sad_tab.cc(255)] Tab Killed: https://editor.unrealengine.com/
+[22392:30504:0520/010906.530:ERROR:gpu_process_host.cc(1007)] GPU process exited unexpectedly: exit_code=1073807364
+[22392:30504:0520/010906.530:WARNING:gpu_process_host.cc(1441)] The GPU process has crashed 1 time(s)
+[22392:30504:0520/010906.619:ERROR:network_service_instance_impl.cc(608)] Network service crashed, restarting service.
+[22392:30504:0520/010906.952:WARNING:pref_notifier_impl.cc(41)] Pref observer for media_router.cast_allow_all_ips found at shutdown.
