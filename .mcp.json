@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "unrealclaude": {
+      "command": "C:/Users/35695/.local/nodejs/node-v24.15.0-win-x64/node.exe",
+      "args": ["C:/repositories/ue5_wangyi/ExtractionGame/Plugins/UnrealClaude/Resources/mcp-bridge/index.js"],
+      "env": {
+        "UNREAL_MCP_URL": "http://localhost:3000"
+      }
+    }
+  }
+}
