@@ -1,0 +1,20 @@
+# Unreal Engine
+Binaries/
+DerivedDataCache/
+Intermediate/
+Saved/
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# Visual Studio
+.vs/
+.vscode/
+
+# Content folders that should not be committed
+Content/Collections/
+Content/Developers/
+
+# Large asset cache
+*.uasset.cache
