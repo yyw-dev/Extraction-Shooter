@@ -10,6 +10,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerStart.h"
 #include "InputAction.h"
 #include "Kismet/GameplayStatics.h"
 #include "SearchEscapeChest.h"
@@ -17,6 +18,7 @@
 #include "SearchEscapeEnemyCharacter.h"
 #include "SearchEscapeHealthComponent.h"
 #include "SearchEscapeHUDWidget.h"
+#include "SEMonster.h"
 #include "UObject/ConstructorHelpers.h"
 
 ASearchEscapeGameMode::ASearchEscapeGameMode()
@@ -113,7 +115,7 @@ void ASearchEscapeGameMode::CreateHUD()
     {
         HUDWidget->SetGameMode(this);
         HUDWidget->AddToViewport(10);
-        HUDWidget->SetGold(CurrentGold);
+        HUDWidget->SetGold(RoundNumber);
         HUDWidget->SetTimeRemaining(TimeRemaining);
         HUDWidget->SetKillCount(KillCount);
         HUDWidget->SetCombatScore(CombatScore);
@@ -252,7 +254,24 @@ void ASearchEscapeGameMode::StartSearchEscapeGame()
     OnPlayerHealthChanged.Broadcast(PlayerCurrentHealth, PlayerMaxHealth);
 
     UpdateHUDState();
+    // Bind Y key to toggle pause menu
+    if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+    {
+        if (UInputComponent* IC = PC->InputComponent)
+        {
+            IC->BindAction(TEXT("Pause"), IE_Pressed, this, &ASearchEscapeGameMode::OnPauseKeyPressed);
+        }
+    }
+
     SetInputForMenu(false);
+}
+
+void ASearchEscapeGameMode::OnPauseKeyPressed()
+{
+    if (HUDWidget && RunState == ESearchEscapeRunState::Playing)
+    {
+        HUDWidget->TogglePauseMenu();
+    }
 }
 
 void ASearchEscapeGameMode::SetupPlayerHealth()
@@ -293,7 +312,7 @@ void ASearchEscapeGameMode::AddGold(int32 GoldAmount)
 
     if (HUDWidget)
     {
-        HUDWidget->SetGold(CurrentGold);
+        HUDWidget->SetGold(RoundNumber);
     }
 }
 
@@ -597,7 +616,7 @@ void ASearchEscapeGameMode::UpdateHUDState()
         return;
     }
 
-    HUDWidget->SetGold(CurrentGold);
+    HUDWidget->SetGold(RoundNumber);
     HUDWidget->SetTimeRemaining(TimeRemaining);
     HUDWidget->SetKillCount(KillCount);
     HUDWidget->SetCombatScore(CombatScore);
@@ -620,7 +639,6 @@ void ASearchEscapeGameMode::HandleChestOpened(ASearchEscapeChest* Chest, AActor*
 
 void ASearchEscapeGameMode::HandleEscapeSucceeded(ASearchEscapeDoor* Door, AActor* Player)
 {
-    // Check if all enemies must be dead before escaping
     if (bRequireAllEnemiesDeadToEscape)
     {
         const int32 AliveEnemies = GetAliveEnemyCount();
@@ -633,12 +651,142 @@ void ASearchEscapeGameMode::HandleEscapeSucceeded(ASearchEscapeDoor* Door, AActo
         }
     }
 
-    EndSearchEscapeGame(true, FText::FromString(TEXT("你已触碰逃生门，成功带出金币")));
+    if (HUDWidget)
+    {
+        HUDWidget->ShowRoundCompleteScreen();
+        SetInputForMenu(true);
+    }
+    else
+    {
+        NextRound();
+    }
+}
+
+void ASearchEscapeGameMode::NextRound()
+{
+    if (RunState != ESearchEscapeRunState::Playing)
+    {
+        return;
+    }
+
+    RoundNumber++;
+    bEscapeDoorsActivated = false;
+
+    // Keep CurrentGold — don't reset
+
+    // Reset timer
+    TimeRemaining = RoundDuration;
+    OnTimeChanged.Broadcast(TimeRemaining);
+
+    // Teleport player to spawn
+    APawn* PlayerPawn = UGameplayStatics::GetPlayerPawn(this, 0);
+    if (PlayerPawn)
+    {
+        TArray<AActor*> PlayerStarts;
+        UGameplayStatics::GetAllActorsOfClass(this, APlayerStart::StaticClass(), PlayerStarts);
+        if (PlayerStarts.Num() > 0)
+        {
+            PlayerPawn->SetActorTransform(PlayerStarts[0]->GetActorTransform());
+        }
+
+        // Heal player
+        if (PlayerHealthComponent)
+        {
+            PlayerHealthComponent->ResetHealth();
+            PlayerCurrentHealth = PlayerMaxHealth;
+            OnPlayerHealthChanged.Broadcast(PlayerCurrentHealth, PlayerMaxHealth);
+        }
+    }
+
+    // Save enemy spawns on first call (both enemy types)
+    if (!bEnemySpawnsSaved)
+    {
+        for (TActorIterator<ASearchEscapeEnemyCharacter> It(GetWorld()); It; ++It)
+        {
+            FSavedEnemySpawn Save;
+            Save.EnemyClass = It->GetClass();
+            Save.SpawnTransform = It->GetActorTransform();
+            SavedEnemySpawns.Add(Save);
+        }
+        for (TActorIterator<ASEMonster> It(GetWorld()); It; ++It)
+        {
+            FSavedEnemySpawn Save;
+            Save.EnemyClass = It->GetClass();
+            Save.SpawnTransform = It->GetActorTransform();
+            SavedEnemySpawns.Add(Save);
+        }
+        bEnemySpawnsSaved = true;
+    }
+
+    // Destroy all enemies of both types
+    for (TActorIterator<ASearchEscapeEnemyCharacter> It(GetWorld()); It; ++It)
+    {
+        It->Destroy();
+    }
+    for (TActorIterator<ASEMonster> It(GetWorld()); It; ++It)
+    {
+        It->Destroy();
+    }
+
+    // Respawn from saved data
+    for (const FSavedEnemySpawn& Save : SavedEnemySpawns)
+    {
+        GetWorld()->SpawnActor<AActor>(Save.EnemyClass, Save.SpawnTransform);
+    }
+
+    // Reset chests
+    for (TActorIterator<ASearchEscapeChest> It(GetWorld()); It; ++It)
+    {
+        It->ResetChest();
+    }
+
+    SpawnActorsFromMarkers();
+    PrepareGameplayActorsForNewRun();
+    BindGameplayActors();
+    BindEnemyDeathEvents();
+
+    // Reset storage boxes — skip ones tagged with SE.Persistent
+    for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+    {
+        if (UFunction* ResetFunc = It->FindFunction(FName(TEXT("ResetStorage"))))
+        {
+            if (It->Tags.Contains(FName(TEXT("SE.Persistent"))))
+            {
+                UKismetSystemLibrary::PrintString(this,
+                    FString::Printf(TEXT("Skipped persistent: %s"), *It->GetName()),
+                    true, true, FLinearColor::Yellow, 3.0f);
+                continue;
+            }
+            uint8 Buffer[64] = {};
+            It->ProcessEvent(ResetFunc, (ResetFunc->ParmsSize <= 64) ? Buffer : nullptr);
+            UKismetSystemLibrary::PrintString(this,
+                FString::Printf(TEXT("Reset: %s"), *It->GetName()),
+                true, true, FLinearColor::Green, 3.0f);
+        }
+    }
+    if (HUDWidget)
+    {
+        HUDWidget->SetGold(RoundNumber);
+        HUDWidget->SetTimeRemaining(TimeRemaining);
+        HUDWidget->SetPlayerHealth(PlayerCurrentHealth, PlayerMaxHealth);
+        HUDWidget->ShowPlayingHUD();
+    }
+
+    UKismetSystemLibrary::PrintString(this,
+        FString::Printf(TEXT("Round %d — 物品和金币保留！"), RoundNumber),
+        true, true, FLinearColor::Green, 4.0f);
 }
 
 void ASearchEscapeGameMode::HandlePlayerHealthDepleted(AActor* InOwner, AActor* Killer)
 {
-    EndSearchEscapeGame(false, FText::FromString(TEXT("生命值耗尽，未能撤离")));
+    EndSearchEscapeGame(false, FText::FromString(TEXT("生命值耗尽")));
+}
+
+void ASearchEscapeGameMode::DeathRestart()
+{
+    // Full level restart — fresh pawn, fresh inventory, fresh everything
+    const FName CurrentLevel = FName(*UGameplayStatics::GetCurrentLevelName(this, true));
+    UGameplayStatics::OpenLevel(this, CurrentLevel);
 }
 
 void ASearchEscapeGameMode::HandlePlayerHealthChanged(AActor* InOwner, float NewHealth, float Delta)

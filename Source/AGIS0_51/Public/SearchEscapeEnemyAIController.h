@@ -93,6 +93,7 @@ private:
     FVector CurrentPatrolLocation = FVector::ZeroVector;
     bool bHasLineOfSight = false;
     bool bHasPatrolLocation = false;
+    bool bWasSensed = false; // Track previous perception state to avoid spam
     float LostSightElapsed = 0.0f;
     float InvestigateElapsed = 0.0f;
     float PatrolWaitRemaining = 0.0f;

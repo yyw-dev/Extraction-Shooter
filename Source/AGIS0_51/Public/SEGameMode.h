@@ -28,6 +28,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Round")
 	void SE_EndGameTimeOut();
 
+	/** Start next round — keeps player pawn alive (preserves inventory) */
+	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Round")
+	void SE_NextRound();
+
+	/** Current round number */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SearchEscape|Round")
+	int32 SE_RoundNumber = 1;
+
 	UFUNCTION(BlueprintPure, Category = "SearchEscape|Round")
 	FString GetTimerText() const;
 

@@ -135,7 +135,7 @@ public:
     bool CanAttackTarget(AActor* Target) const;
 
     UFUNCTION(BlueprintCallable, Category = "Enemy")
-    void PerformAttack(AActor* Target);
+    virtual void PerformAttack(AActor* Target);
 
     UFUNCTION(BlueprintCallable, Category = "Enemy")
     void ApplyKnockbackFrom(AActor* Source, float HorizontalStrength, float VerticalStrength);
@@ -183,7 +183,7 @@ private:
 
     void OnAttackCooldownEnd();
 
-    void ApplyMovementSettingsForState(ESearchEscapeEnemyState NewState);
+    virtual void ApplyMovementSettingsForState(ESearchEscapeEnemyState NewState);
     void ConfigureDefaultMeshIfNeeded();
     void ConfigureOverheadHealthBar();
     void UpdateOverheadHealthBar();
@@ -191,7 +191,11 @@ private:
     void FaceOverheadHealthBarToCamera();
     void UpdateLocomotionAnimation();
     void PlayLoopingAnimation(UAnimationAsset* Animation);
+
+protected:
     void PlayAttackAnimation();
+
+private:
     void ResolveAttackImpact();
     bool IsTargetStillInAttackRange(AActor* Target) const;
     void ApplyKnockbackToTarget(AActor* Target) const;

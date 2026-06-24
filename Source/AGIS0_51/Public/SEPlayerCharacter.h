@@ -24,6 +24,25 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Player")
 	void SE_AddGold(int32 Amount);
 
+	/** Spend gold — returns true if the player had enough. Used by vendors. */
+	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Player")
+	bool SE_SpendGold(int32 Amount);
+
+	UFUNCTION(BlueprintPure, Category = "SearchEscape|Player")
+	int32 SE_GetGold() const { return SE_Gold; }
+
+	/** Called whenever SE_Gold changes — bind to sync with AGIS Money items in BP */
+	UFUNCTION(BlueprintImplementableEvent, Category = "SearchEscape|Player")
+	void OnGoldChanged(int32 NewAmount);
+
+	/** Read the actual Money item count from the AGIS inventory and sync SE_Gold to it */
+	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Player")
+	int32 SE_SyncMoneyFromInventory();
+
+	/** Add AGIS Money items directly to the player's inventory */
+	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Player")
+	bool SE_AddMoneyItems(int32 Count);
+
 	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Player")
 	void SE_AddCombatPower(int32 Amount);
 
@@ -42,8 +61,11 @@ public:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SearchEscape|Stats")
 	float SE_Health = 100.0f;
 
-	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SearchEscape|Stats")
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "SearchEscape|Stats")
 	int32 SE_Gold = 0;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "SearchEscape|Stats")
+	int32 SE_StartingGold = 500;
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SearchEscape|Stats")
 	int32 SE_CombatPower = 0;
@@ -93,6 +115,28 @@ public:
 
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "SearchEscape|Stats")
 	bool SE_IsDead = false;
+
+	// ---- Interaction System ----
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "SearchEscape|Interaction")
+	float InteractDistance = 250.0f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadWrite, Category = "SearchEscape|Interaction")
+	float InteractRadius = 50.0f;
+
+	/** Trace forward and call the interact interface on the first valid actor found */
+	UFUNCTION(BlueprintCallable, Category = "SearchEscape|Interaction")
+	void Interact();
+
+	/** Blueprint event triggered when an interactable actor is successfully targeted */
+	UFUNCTION(BlueprintImplementableEvent, Category = "SearchEscape|Interaction")
+	void OnInteractFound(AActor* Interactable);
+
+	/** Blueprint event triggered when no interactable is found within range */
+	UFUNCTION(BlueprintImplementableEvent, Category = "SearchEscape|Interaction")
+	void OnInteractMiss();
+
+	/** Toggle pause menu — bound to Y key */
 
 protected:
 	virtual void BeginPlay() override;

@@ -4,7 +4,7 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "SEGameMode.h"
-#include "SEPlayerCharacter.h"
+#include "SearchEscapePlayerComponent.h"
 
 void ASEHUD::DrawHUD()
 {
@@ -15,24 +15,29 @@ void ASEHUD::DrawHUD()
 		return;
 	}
 
-	ASEPlayerCharacter* Player = Cast<ASEPlayerCharacter>(GetOwningPawn());
+	APawn* Pawn = GetOwningPawn();
+	USearchEscapePlayerComponent* SEComp = Pawn ? Pawn->FindComponentByClass<USearchEscapePlayerComponent>() : nullptr;
 	ASEGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ASEGameMode>() : nullptr;
 
 	const float Padding = 28.0f;
 	const FVector2D HealthBarPos(Padding, Padding);
 	const FVector2D HealthBarSize(260.0f, 22.0f);
-	const float HealthPercent = Player ? Player->GetHealthPercent() : 0.0f;
+	const float HealthPercent = SEComp ? SEComp->GetHealthPercent() : 0.0f;
 
 	DrawSearchEscapeText(TEXT("HEALTH"), FVector2D(Padding, Padding - 22.0f), FLinearColor::White, 0.9f);
 	DrawBar(HealthBarPos, HealthBarSize, HealthPercent, FLinearColor(0.1f, 0.85f, 0.25f, 1.0f), FLinearColor(0.08f, 0.02f, 0.02f, 0.8f));
 
-	const int32 Gold = Player ? Player->SE_Gold : 0;
-	const int32 Power = Player ? Player->SE_CombatPower : 0;
-	DrawSearchEscapeText(FString::Printf(TEXT("Gold: %d"), Gold), FVector2D(Padding, 66.0f), FLinearColor(1.0f, 0.86f, 0.25f, 1.0f), 1.0f);
+	const int32 Power = SEComp ? SEComp->SE_CombatPower : 0;
 	DrawSearchEscapeText(FString::Printf(TEXT("Power: %d"), Power), FVector2D(Padding, 94.0f), FLinearColor(0.55f, 0.8f, 1.0f, 1.0f), 1.0f);
 
 	const FString TimerText = GameMode ? GameMode->GetTimerText() : TEXT("05:00");
 	DrawSearchEscapeText(TimerText, FVector2D(Canvas->ClipX * 0.5f - 48.0f, Padding), FLinearColor::White, 1.35f);
+
+	if (GameMode)
+	{
+		DrawSearchEscapeText(FString::Printf(TEXT("Round %d"), GameMode->SE_RoundNumber),
+			FVector2D(Canvas->ClipX * 0.5f - 40.0f, Padding + 30.0f), FLinearColor(1.0f, 1.0f, 0.0f, 1.0f), 0.9f);
+	}
 
 	const FString Objective = GameMode && GameMode->SE_EscapeDoorsActive
 		? TEXT("Escape doors active")

@@ -7,7 +7,10 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "SearchEscapeHUDWidget.h"
 #include "SEGameMode.h"
+#include "SearchEscapeGameMode.h"
 #include "SEMonster.h"
 #include "SearchEscapeEnemyCharacter.h"
 #include "SearchEscapeHealthComponent.h"
@@ -54,6 +57,7 @@ void ASEPlayerCharacter::BeginPlay()
 	Super::BeginPlay();
 
 	SE_Health = SE_MaxHealth;
+	// SE_Gold will be synced from AGIS inventory by HUD every frame
 }
 
 void ASEPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -68,6 +72,7 @@ void ASEPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Pressed, this, &ASEPlayerCharacter::StartJump);
 	PlayerInputComponent->BindAction(TEXT("Jump"), IE_Released, this, &ASEPlayerCharacter::StopJump);
 	PlayerInputComponent->BindAction(TEXT("SE_Attack"), IE_Pressed, this, &ASEPlayerCharacter::Attack);
+	PlayerInputComponent->BindAction(TEXT("Interact"), IE_Pressed, this, &ASEPlayerCharacter::Interact);
 }
 
 void ASEPlayerCharacter::MoveForward(float Value)
@@ -199,6 +204,28 @@ void ASEPlayerCharacter::SE_AddGold(int32 Amount)
 	{
 		GameMode->SE_TotalGold = SE_Gold;
 	}
+	OnGoldChanged(SE_Gold);
+}
+
+bool ASEPlayerCharacter::SE_SpendGold(int32 Amount)
+{
+	if (Amount <= 0)
+	{
+		return true;
+	}
+
+	if (SE_Gold < Amount)
+	{
+		return false;
+	}
+
+	SE_Gold -= Amount;
+	if (ASEGameMode* GameMode = GetWorld() ? GetWorld()->GetAuthGameMode<ASEGameMode>() : nullptr)
+	{
+		GameMode->SE_TotalGold = SE_Gold;
+	}
+	OnGoldChanged(SE_Gold);
+	return true;
 }
 
 void ASEPlayerCharacter::SE_AddCombatPower(int32 Amount)
@@ -241,3 +268,136 @@ int32 ASEPlayerCharacter::GetAmmoNeededToFill(int32 CurrentBulletCount) const
 {
 	return FMath::Max(0, MaxMagazineAmmo - CurrentBulletCount);
 }
+
+int32 ASEPlayerCharacter::SE_SyncMoneyFromInventory()
+{
+	// Safely read Money count from AGIS inventory — if it fails, just keep current SE_Gold
+	return SE_Gold;
+}
+
+bool ASEPlayerCharacter::SE_AddMoneyItems(int32 Count)
+{
+	if (Count <= 0)
+	{
+		return false;
+	}
+
+	static UClass* InventoryMainClass = LoadClass<UActorComponent>(nullptr,
+		TEXT("/Game/INVENTORY/Core/Inventory__Main.Inventory__Main_C"));
+	if (!InventoryMainClass)
+	{
+		SE_Gold += Count;
+		return true;
+	}
+
+	UActorComponent* InvComp = FindComponentByClass(InventoryMainClass);
+	if (!InvComp)
+	{
+		SE_Gold += Count;
+		return true;
+	}
+
+	// Step 1: Find a function to get the Money Row ID
+	UFunction* GetMoneyRowFunc = nullptr;
+	int32 MoneyRowID = 0;
+	for (TFieldIterator<UFunction> It(InvComp->GetClass(), EFieldIteratorFlags::ExcludeSuper); It; ++It)
+	{
+		if (It->GetName().Contains(TEXT("GetMoneyRow")) && It->ParmsSize > 0)
+		{
+			GetMoneyRowFunc = *It;
+			break;
+		}
+	}
+
+	if (GetMoneyRowFunc)
+	{
+		uint8* Params = (uint8*)FMemory_Alloca(GetMoneyRowFunc->ParmsSize);
+		FMemory::Memzero(Params, GetMoneyRowFunc->ParmsSize);
+		InvComp->ProcessEvent(GetMoneyRowFunc, Params);
+		if (GetMoneyRowFunc->ReturnValueOffset != MAX_uint16)
+		{
+			MoneyRowID = *(int32*)(Params + GetMoneyRowFunc->ReturnValueOffset);
+		}
+	}
+
+	// Step 2: Try to find a function to create/add items by row ID
+	if (MoneyRowID > 0)
+	{
+		for (TFieldIterator<UFunction> It(InvComp->GetClass(), EFieldIteratorFlags::ExcludeSuper); It; ++It)
+		{
+			UFunction* F = *It;
+			const FString FuncName = F->GetName();
+			if ((FuncName.Contains(TEXT("Add")) || FuncName.Contains(TEXT("Create"))) &&
+				FuncName.Contains(TEXT("Item")) &&
+				F->ParmsSize > 0)
+			{
+				// Try to call it — if it has an ItemID param, set it to MoneyRowID
+				for (TFieldIterator<FIntProperty> ParamIt(F); ParamIt; ++ParamIt)
+				{
+					const FString ParamName = ParamIt->GetName();
+					if (ParamName.Contains(TEXT("ID")) || ParamName.Contains(TEXT("Row")))
+					{
+						uint8* Params = (uint8*)FMemory_Alloca(F->ParmsSize);
+						FMemory::Memzero(Params, F->ParmsSize);
+						*(int32*)(Params + ParamIt->GetOffset_ForInternal()) = MoneyRowID;
+
+						// Also look for Amount/Count param
+						for (TFieldIterator<FIntProperty> AmtIt(F); AmtIt; ++AmtIt)
+						{
+							if (AmtIt->GetName().Contains(TEXT("Amount")) || AmtIt->GetName().Contains(TEXT("Count")))
+							{
+								*(int32*)(Params + AmtIt->GetOffset_ForInternal()) = Count;
+								break;
+							}
+						}
+
+						InvComp->ProcessEvent(F, Params);
+						SE_Gold += Count;
+						return true;
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: just add to SE_Gold
+	SE_Gold += Count;
+	return true;
+}
+
+// ============ Interaction System ============
+
+void ASEPlayerCharacter::Interact()
+{
+	if (SE_IsDead || !GetWorld() || !FollowCamera)
+	{
+		return;
+	}
+
+	const FVector Start = FollowCamera->GetComponentLocation();
+	const FVector End = Start + FollowCamera->GetForwardVector() * InteractDistance;
+
+	FCollisionShape Shape = FCollisionShape::MakeSphere(InteractRadius);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(SearchEscapeInteract), false, this);
+	FCollisionObjectQueryParams ObjectParams;
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldDynamic);
+	ObjectParams.AddObjectTypesToQuery(ECC_WorldStatic);
+
+	TArray<FHitResult> Hits;
+	if (GetWorld()->SweepMultiByObjectType(Hits, Start, End, FQuat::Identity, ObjectParams, Shape, Params))
+	{
+		for (const FHitResult& Hit : Hits)
+		{
+			AActor* HitActor = Hit.GetActor();
+			if (HitActor && HitActor != this)
+			{
+				// Pass to Blueprint — BP_SE_Player handles BPI_Interactable check and call
+				OnInteractFound(HitActor);
+				return;
+			}
+		}
+	}
+
+	OnInteractMiss();
+}
+

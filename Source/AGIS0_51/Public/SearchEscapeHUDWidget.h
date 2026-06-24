@@ -21,6 +21,7 @@ class AGIS0_51_API USearchEscapeHUDWidget : public UUserWidget
 public:
     virtual TSharedRef<SWidget> RebuildWidget() override;
     virtual void NativeConstruct() override;
+    virtual FReply NativeOnKeyDown(const FGeometry& InGeometry, const FKeyEvent& InKeyEvent) override;
 
     UFUNCTION(BlueprintCallable, Category = "Search Escape UI")
     void SetGameMode(ASearchEscapeGameMode* InGameMode);
@@ -33,6 +34,13 @@ public:
 
     UFUNCTION(BlueprintCallable, Category = "Search Escape UI")
     void ShowEndScreen(bool bSuccess, int32 FinalGold, const FText& Reason);
+
+    UFUNCTION(BlueprintCallable, Category = "Search Escape UI")
+    void ShowRoundCompleteScreen();
+
+    /** Toggle the in-game pause menu (Y key) */
+    UFUNCTION(BlueprintCallable, Category = "Search Escape UI")
+    void TogglePauseMenu();
 
     UFUNCTION(BlueprintCallable, Category = "Search Escape UI")
     void SetGold(int32 NewGold);
@@ -55,6 +63,15 @@ protected:
 
     UFUNCTION()
     void HandleRestartClicked();
+
+    UFUNCTION()
+    void HandleQuitClicked();
+
+    UFUNCTION()
+    void HandleNextRoundClicked();
+
+    UFUNCTION()
+    void HandleContinueClicked();
 
 private:
     UPROPERTY()
@@ -93,6 +110,12 @@ private:
     // End screen
     UPROPERTY()
     TObjectPtr<UBorder> EndPanel;
+
+    UPROPERTY()
+    TObjectPtr<UBorder> RoundCompletePanel;
+
+    UPROPERTY()
+    TObjectPtr<UBorder> PauseMenuPanel;
 
     UPROPERTY()
     TObjectPtr<UTextBlock> EndTitleText;

@@ -2,9 +2,10 @@
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "GameFramework/Character.h"
 #include "Kismet/GameplayStatics.h"
+#include "SearchEscapePlayerComponent.h"
 #include "SEGameMode.h"
-#include "SEPlayerCharacter.h"
 #include "UObject/ConstructorHelpers.h"
 
 ASEEscapeDoor::ASEEscapeDoor()
@@ -47,8 +48,15 @@ void ASEEscapeDoor::Tick(float DeltaSeconds)
 		return;
 	}
 
-	ASEPlayerCharacter* Player = Cast<ASEPlayerCharacter>(UGameplayStatics::GetPlayerCharacter(this, 0));
-	if (!Player || Player->SE_IsDead)
+	ACharacter* Player = UGameplayStatics::GetPlayerCharacter(this, 0);
+	if (!Player)
+	{
+		return;
+	}
+
+	// Check if player is dead via SE component
+	USearchEscapePlayerComponent* SEComp = Player->FindComponentByClass<USearchEscapePlayerComponent>();
+	if (SEComp && SEComp->SE_IsDead)
 	{
 		return;
 	}

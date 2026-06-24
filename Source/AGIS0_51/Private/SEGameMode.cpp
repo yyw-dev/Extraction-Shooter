@@ -2,7 +2,9 @@
 
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "GameFramework/PlayerStart.h"
 #include "Kismet/GameplayStatics.h"
+#include "SearchEscapePlayerComponent.h"
 #include "SEChest.h"
 #include "SEEscapeDoor.h"
 #include "SEHUD.h"
@@ -141,9 +143,52 @@ void ASEGameMode::ActivateEscapeDoors()
 
 void ASEGameMode::SE_EndGameEscape()
 {
-	EndGame(
-		FText::FromString(TEXT("Escape Successful")),
-		FText::FromString(TEXT("You reached an escape door and extracted safely.")));
+	// Show brief escape message then start next round (keeps player + inventory)
+	SE_NextRound();
+}
+
+void ASEGameMode::SE_NextRound()
+{
+	SE_RoundNumber++;
+
+	// Reset round state
+	SE_TimeRemaining = SE_RoundDuration;
+	SE_GameEnded = false;
+	SE_EscapeDoorsActive = false;
+	SE_ResultTitle = FText::FromString(TEXT("Playing"));
+	SE_ResultDetail = FText::GetEmpty();
+	EscapeDoors.Reset();
+
+	// Teleport player back to spawn
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
+	{
+		PC->SetShowMouseCursor(false);
+
+		if (APawn* PlayerPawn = PC->GetPawn())
+		{
+			// Find a PlayerStart and teleport
+			TArray<AActor*> PlayerStarts;
+			UGameplayStatics::GetAllActorsOfClass(this, APlayerStart::StaticClass(), PlayerStarts);
+			if (PlayerStarts.Num() > 0)
+			{
+				PlayerPawn->SetActorTransform(PlayerStarts[0]->GetActorTransform());
+			}
+
+			// Heal player for next round
+			if (USearchEscapePlayerComponent* SEComp = PlayerPawn->FindComponentByClass<USearchEscapePlayerComponent>())
+			{
+				SEComp->SE_Health = SEComp->SE_MaxHealth;
+				SEComp->SE_IsDead = false;
+			}
+		}
+	}
+
+	// Respawn enemies and chests
+	SpawnActorsFromMarkers();
+
+	// Restart timer
+	GetWorldTimerManager().ClearTimer(RoundTimerHandle);
+	GetWorldTimerManager().SetTimer(RoundTimerHandle, this, &ASEGameMode::TickRoundTimer, 1.0f, true);
 }
 
 void ASEGameMode::SE_EndGameDead()

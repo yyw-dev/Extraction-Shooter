@@ -40,7 +40,9 @@ public:
     virtual void BeginPlay() override;
     virtual void Tick(float DeltaSeconds) override;
 
-    // ---- UI ----
+    void SetInputForMenu(bool bMenuInput);
+
+    void OnPauseKeyPressed();
 
     UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Search Escape|UI")
     TSubclassOf<USearchEscapeHUDWidget> HUDWidgetClass;
@@ -145,6 +147,27 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Search Escape")
     void RestartSearchEscapeGame();
 
+    /** Start next round — keeps player pawn and gold, resets everything else */
+    UFUNCTION(BlueprintCallable, Category = "Search Escape")
+    void NextRound();
+
+    /** Death restart — clears gold and items, spawns fresh pawn */
+    UFUNCTION(BlueprintCallable, Category = "Search Escape")
+    void DeathRestart();
+
+    UPROPERTY(BlueprintReadOnly, Category = "Search Escape|State")
+    int32 RoundNumber = 1;
+
+private:
+    /** Saved enemy spawn data for respawning (supports both enemy types) */
+    struct FSavedEnemySpawn
+    {
+        TSubclassOf<AActor> EnemyClass;
+        FTransform SpawnTransform;
+    };
+    TArray<FSavedEnemySpawn> SavedEnemySpawns;
+    bool bEnemySpawnsSaved = false;
+
     UFUNCTION(BlueprintPure, Category = "Search Escape")
     bool IsGamePlaying() const;
 
@@ -178,7 +201,6 @@ private:
     FTimerHandle PlayerAttackMovementLockTimer;
 
     void CreateHUD();
-    void SetInputForMenu(bool bMenuInput);
     void SpawnActorsFromMarkers();
     void PrepareGameplayActorsForNewRun();
     void BindGameplayActors();

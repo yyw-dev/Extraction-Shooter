@@ -10,6 +10,7 @@
 #include "Perception/AIPerceptionComponent.h"
 #include "Perception/AISenseConfig_Sight.h"
 #include "SearchEscapeEnemyCharacter.h"
+#include "SearchEscapePlayerComponent.h"
 
 ASearchEscapeEnemyAIController::ASearchEscapeEnemyAIController()
 {
@@ -129,13 +130,25 @@ void ASearchEscapeEnemyAIController::OnTargetPerceptionUpdated(AActor* Actor, FA
         return;
     }
 
+    // Ignore dead players
+    if (USearchEscapePlayerComponent* SEComp = SensedPawn->FindComponentByClass<USearchEscapePlayerComponent>())
+    {
+        if (SEComp->SE_IsDead)
+        {
+            return;
+        }
+    }
+
     ASearchEscapeEnemyCharacter* Enemy = Cast<ASearchEscapeEnemyCharacter>(MyPawn);
     if (!Enemy || Enemy->IsDead())
     {
         return;
     }
 
-    if (Stimulus.WasSuccessfullySensed())
+    const bool bNowSensed = Stimulus.WasSuccessfullySensed();
+
+    // Only react on actual state transitions to avoid message/state spam
+    if (bNowSensed && !bWasSensed)
     {
         CurrentTarget = Actor;
         LastKnownTargetLocation = Actor->GetActorLocation();
@@ -152,7 +165,7 @@ void ASearchEscapeEnemyAIController::OnTargetPerceptionUpdated(AActor* Actor, FA
             UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("%s detected %s"), *GetName(), *Actor->GetName()), true, false, FLinearColor::Red, 1.0f);
         }
     }
-    else if (CurrentTarget == Actor)
+    else if (!bNowSensed && bWasSensed && CurrentTarget == Actor)
     {
         LastKnownTargetLocation = Actor->GetActorLocation();
         bHasLineOfSight = false;
@@ -162,6 +175,8 @@ void ASearchEscapeEnemyAIController::OnTargetPerceptionUpdated(AActor* Actor, FA
         Enemy->SetEnemyState(ESearchEscapeEnemyState::Investigate);
         SyncBlackboardTarget();
     }
+
+    bWasSensed = bNowSensed;
 }
 
 void ASearchEscapeEnemyAIController::RunCodeDrivenAI(float DeltaSeconds)
@@ -175,8 +190,17 @@ void ASearchEscapeEnemyAIController::RunCodeDrivenAI(float DeltaSeconds)
 
     MoveRefreshRemaining = FMath::Max(0.0f, MoveRefreshRemaining - DeltaSeconds);
 
+    // Clear dead targets
     if (CurrentTarget)
     {
+        if (USearchEscapePlayerComponent* SEComp = CurrentTarget->FindComponentByClass<USearchEscapePlayerComponent>())
+        {
+            if (SEComp->SE_IsDead)
+            {
+                ClearTargetAndReturnToPatrol(Enemy);
+                return;
+            }
+        }
         UpdateChase(DeltaSeconds, Enemy);
     }
     else
@@ -203,7 +227,14 @@ void ASearchEscapeEnemyAIController::UpdateChase(float DeltaSeconds, ASearchEsca
         LostSightElapsed = 0.0f;
         InvestigateElapsed = 0.0f;
 
-        if (DistanceToTarget <= Enemy->AttackRange)
+        // Hysteresis: use wider range to LEAVE attack than to ENTER, preventing oscillation
+        const float AttackEnterRange = Enemy->AttackRange;
+        const float AttackExitRange = Enemy->AttackRange * 1.3f;
+        const bool bInAttackRange = Enemy->CurrentState == ESearchEscapeEnemyState::Attack
+            ? DistanceToTarget <= AttackExitRange
+            : DistanceToTarget <= AttackEnterRange;
+
+        if (bInAttackRange)
         {
             StopMovement();
             Enemy->SetEnemyState(ESearchEscapeEnemyState::Attack);
@@ -217,7 +248,6 @@ void ASearchEscapeEnemyAIController::UpdateChase(float DeltaSeconds, ASearchEsca
             Enemy->SetEnemyState(ESearchEscapeEnemyState::Chase);
             if (MoveRefreshRemaining <= 0.0f)
             {
-                // Get much closer than attack range before stopping (50% of attack range instead of 80%)
                 MoveToActor(CurrentTarget, Enemy->AttackRange * 0.5f, true, true, true);
                 MoveRefreshRemaining = MoveRefreshInterval;
             }

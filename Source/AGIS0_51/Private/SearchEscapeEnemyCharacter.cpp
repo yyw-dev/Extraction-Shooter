@@ -8,6 +8,7 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/WidgetComponent.h"
+#include "Engine/DamageEvents.h"
 #include "Engine/Engine.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -17,6 +18,7 @@
 #include "SearchEscapeEnemyAIController.h"
 #include "SearchEscapeEnemyHealthBarWidget.h"
 #include "SearchEscapeHealthComponent.h"
+#include "SearchEscapePlayerComponent.h"
 #include "SEPlayerCharacter.h"
 #include "Engine/SkeletalMesh.h"
 #include "UObject/ConstructorHelpers.h"
@@ -183,7 +185,7 @@ void ASearchEscapeEnemyCharacter::SetEnemyState(ESearchEscapeEnemyState NewState
     {
         const UEnum* EnumPtr = StaticEnum<ESearchEscapeEnemyState>();
         const FString StateName = EnumPtr ? EnumPtr->GetNameStringByValue(static_cast<int64>(NewState)) : TEXT("Unknown");
-        UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("%s -> %s"), *GetName(), *StateName), true, false, FLinearColor::Yellow, 2.0f);
+        UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("%s -> %s"), *GetName(), *StateName), true, false, FLinearColor::Yellow, 0.5f);
     }
 }
 
@@ -490,15 +492,34 @@ void ASearchEscapeEnemyCharacter::ResolveAttackImpact()
         return;
     }
 
+    bool bDamageApplied = false;
+
     if (USearchEscapeHealthComponent* TargetHealth = Target->FindComponentByClass<USearchEscapeHealthComponent>())
     {
         TargetHealth->TakeDamage(AttackDamage, this);
+        bDamageApplied = true;
+    }
+    else if (ASEPlayerCharacter* Player = Cast<ASEPlayerCharacter>(Target))
+    {
+        Player->SE_TakeDamage(AttackDamage);
+        bDamageApplied = true;
+    }
+    else if (USearchEscapePlayerComponent* SEComp = Target->FindComponentByClass<USearchEscapePlayerComponent>())
+    {
+        SEComp->SE_TakeDamage(AttackDamage);
+        bDamageApplied = true;
+    }
+    else
+    {
+        // Fallback: use standard UE damage pipeline
+        Target->TakeDamage(AttackDamage, FDamageEvent(), GetController(), this);
+        bDamageApplied = true;
     }
     ApplyKnockbackToTarget(Target);
 
     if (bPrintDebugMessages)
     {
-        UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("%s hit %s for %.0f damage"), *GetName(), *Target->GetName(), AttackDamage), true, false, FLinearColor::Red, 1.0f);
+        UKismetSystemLibrary::PrintString(this, FString::Printf(TEXT("%s hit %s for %.0f damage (applied=%d)"), *GetName(), Target ? *Target->GetName() : TEXT("null"), AttackDamage, bDamageApplied ? 1 : 0), true, false, FLinearColor::Red, 1.0f);
     }
 }
 
